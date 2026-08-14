@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from scipy import stats
 from io import BytesIO
 
 st.set_page_config(
@@ -22,76 +21,78 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file)
 
     st.subheader("Données")
-
     st.dataframe(df.head())
 
     portefeuille = df["Perf Hebdo Portefeuille_actions"].dropna()
     indice = df["Perf Hebdo MASIRB"].dropna()
 
+    # Alignement des séries
     n = min(len(portefeuille), len(indice))
 
     portefeuille = portefeuille.iloc[:n]
     indice = indice.iloc[:n]
 
+    # Performances cumulées
     perf_portefeuille = (
         df["VL_portefeuille_actions"].dropna().iloc[-1]
-        /
-        df["VL_portefeuille_actions"].dropna().iloc[0]
+        / df["VL_portefeuille_actions"].dropna().iloc[0]
         - 1
     )
 
     perf_indice = (
         df["MAISI_RB"].dropna().iloc[-1]
-        /
-        df["MAISI_RB"].dropna().iloc[0]
+        / df["MAISI_RB"].dropna().iloc[0]
         - 1
     )
 
     alpha = perf_portefeuille - perf_indice
 
+    # Volatilités
     vol_port = portefeuille.std()
-
     vol_indice = indice.std()
 
     vol_port_ann = vol_port * np.sqrt(52)
-
     vol_indice_ann = vol_indice * np.sqrt(52)
 
-    beta = np.cov(
-        portefeuille,
-        indice
-    )[0,1] / np.var(indice)
+    # Bêta
+    variance_indice = np.var(indice)
 
+    if variance_indice != 0:
+        beta = np.cov(portefeuille, indice)[0, 1] / variance_indice
+    else:
+        beta = np.nan
+
+    # Corrélation
     corr = portefeuille.corr(indice)
 
+    # Tracking Error
     active_return = portefeuille - indice
 
     te_hebdo = active_return.std()
-
     te_ann = te_hebdo * np.sqrt(52)
 
-    info_ratio = (
-        active_return.mean()
-        /
-        te_hebdo
-        * np.sqrt(52)
-    )
+    # Information Ratio
+    if te_hebdo != 0:
+        info_ratio = (active_return.mean() / te_hebdo) * np.sqrt(52)
+    else:
+        info_ratio = np.nan
 
+    # Sharpe ratios (sans taux sans risque)
     sharpe_port = (
-        portefeuille.mean()
-        /
-        vol_port
+        portefeuille.mean() / vol_port
+        if vol_port != 0
+        else np.nan
     )
 
     sharpe_indice = (
-        indice.mean()
-        /
-        vol_indice
+        indice.mean() / vol_indice
+        if vol_indice != 0
+        else np.nan
     )
 
+    # Tableau des résultats
     resultats = pd.DataFrame({
-
-        "Indicateur":[
+        "Indicateur": [
             "Performance Portefeuille",
             "Performance Indice",
             "Alpha",
@@ -107,8 +108,7 @@ if uploaded_file:
             "Sharpe Portefeuille",
             "Sharpe Indice"
         ],
-
-        "Valeur":[
+        "Valeur": [
             perf_portefeuille,
             perf_indice,
             alpha,
@@ -127,14 +127,14 @@ if uploaded_file:
     })
 
     st.subheader("Indicateurs")
-
     st.dataframe(resultats)
 
+    # Graphique des rendements
     st.subheader("Evolution des rendements")
 
     graph_df = pd.DataFrame({
-        "Portefeuille": portefeuille,
-        "Indice": indice
+        "Portefeuille": portefeuille.reset_index(drop=True),
+        "Indice": indice.reset_index(drop=True)
     })
 
     fig = px.line(
@@ -142,21 +142,25 @@ if uploaded_file:
         title="Rendements hebdomadaires"
     )
 
-    st.plotly_chart(fig,
-                     use_container_width=True)
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
 
+    # Graphique Beta
     st.subheader("Sensibilité (Bêta)")
 
     reg_df = pd.DataFrame({
-        "Indice": indice,
-        "Portefeuille": portefeuille
+        "Indice": indice.reset_index(drop=True),
+        "Portefeuille": portefeuille.reset_index(drop=True)
     })
 
     fig2 = px.scatter(
         reg_df,
         x="Indice",
         y="Portefeuille",
-        trendline="ols"
+        trendline="ols",
+        title="Régression Portefeuille vs Indice"
     )
 
     st.plotly_chart(
@@ -166,9 +170,10 @@ if uploaded_file:
 
     st.metric(
         "Bêta",
-        round(beta,4)
+        f"{beta:.4f}" if pd.notna(beta) else "N/A"
     )
 
+    # Export Excel
     output = BytesIO()
 
     with pd.ExcelWriter(
@@ -192,5 +197,5 @@ if uploaded_file:
         label="Télécharger le rapport Excel",
         data=output.getvalue(),
         file_name="rapport_portefeuille.xlsx",
-        mime="application/vnd.ms-excel"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
