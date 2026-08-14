@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+
+.env
+
+exports/
+data/
+
+.streamlit/
+
+*.xlsx
+~$*.xlsx
