@@ -4,6 +4,10 @@ import numpy as np
 import plotly.express as px
 from io import BytesIO
 
+# ======================================================
+# Configuration
+# ======================================================
+
 st.set_page_config(
     page_title="Analyse Portefeuille",
     layout="wide"
@@ -16,68 +20,135 @@ uploaded_file = st.file_uploader(
     type=["xlsx"]
 )
 
+# ======================================================
+# Lecture du fichier
+# ======================================================
+
 if uploaded_file:
 
     df = pd.read_excel(uploaded_file)
 
-    st.subheader("Données")
+    # Nettoyage des noms de colonnes
+    df.columns = df.columns.str.strip()
+
+    st.subheader("Aperçu des données")
     st.dataframe(df.head())
 
-    portefeuille = df["Perf Hebdo Portefeuille_actions"].dropna()
-    indice = df["Perf Hebdo MASIRB"].dropna()
+    # Affichage des colonnes détectées
+    st.expander("Colonnes détectées").write(df.columns.tolist())
 
-    # Alignement des séries
+    # ==================================================
+    # Colonnes attendues
+    # ==================================================
+
+    colonnes_requises = [
+        "Perf Hebdo Portefeuille_actions",
+        "Perf Hebdo MASIRB",
+        "VL_ portefeuille_actions",
+        "MAISI_RB"
+    ]
+
+    colonnes_absentes = [
+        c for c in colonnes_requises
+        if c not in df.columns
+    ]
+
+    if colonnes_absentes:
+        st.error(
+            f"Colonnes absentes : {', '.join(colonnes_absentes)}"
+        )
+        st.stop()
+
+    # ==================================================
+    # Séries de rendement
+    # ==================================================
+
+    portefeuille = df[
+        "Perf Hebdo Portefeuille_actions"
+    ].dropna()
+
+    indice = df[
+        "Perf Hebdo MASIRB"
+    ].dropna()
+
     n = min(len(portefeuille), len(indice))
 
     portefeuille = portefeuille.iloc[:n]
     indice = indice.iloc[:n]
 
+    # ==================================================
     # Performances cumulées
+    # ==================================================
+
+    vl_port = df["VL_ portefeuille_actions"].dropna()
+
+    vl_indice = df["MAISI_RB"].dropna()
+
     perf_portefeuille = (
-        df["VL_portefeuille_actions"].dropna().iloc[-1]
-        / df["VL_portefeuille_actions"].dropna().iloc[0]
-        - 1
+        vl_port.iloc[-1] / vl_port.iloc[0] - 1
     )
 
     perf_indice = (
-        df["MAISI_RB"].dropna().iloc[-1]
-        / df["MAISI_RB"].dropna().iloc[0]
-        - 1
+        vl_indice.iloc[-1] / vl_indice.iloc[0] - 1
     )
 
     alpha = perf_portefeuille - perf_indice
 
+    # ==================================================
     # Volatilités
+    # ==================================================
+
     vol_port = portefeuille.std()
+
     vol_indice = indice.std()
 
     vol_port_ann = vol_port * np.sqrt(52)
+
     vol_indice_ann = vol_indice * np.sqrt(52)
 
-    # Bêta
+    # ==================================================
+    # Beta
+    # ==================================================
+
     variance_indice = np.var(indice)
 
-    if variance_indice != 0:
-        beta = np.cov(portefeuille, indice)[0, 1] / variance_indice
-    else:
+    if variance_indice == 0:
         beta = np.nan
+    else:
+        beta = (
+            np.cov(portefeuille, indice)[0, 1]
+            / variance_indice
+        )
 
+    # ==================================================
     # Corrélation
+    # ==================================================
+
     corr = portefeuille.corr(indice)
 
+    # ==================================================
     # Tracking Error
+    # ==================================================
+
     active_return = portefeuille - indice
 
     te_hebdo = active_return.std()
+
     te_ann = te_hebdo * np.sqrt(52)
 
-    # Information Ratio
-    if te_hebdo != 0:
-        info_ratio = (active_return.mean() / te_hebdo) * np.sqrt(52)
-    else:
+    if te_hebdo == 0:
         info_ratio = np.nan
+    else:
+        info_ratio = (
+            active_return.mean()
+            / te_hebdo
+            * np.sqrt(52)
+        )
 
-    # Sharpe ratios (sans taux sans risque)
+    # ==================================================
+    # Sharpe
+    # ==================================================
+
     sharpe_port = (
         portefeuille.mean() / vol_port
         if vol_port != 0
@@ -90,7 +161,10 @@ if uploaded_file:
         else np.nan
     )
 
-    # Tableau des résultats
+    # ==================================================
+    # Résultats
+    # ==================================================
+
     resultats = pd.DataFrame({
         "Indicateur": [
             "Performance Portefeuille",
@@ -98,8 +172,8 @@ if uploaded_file:
             "Alpha",
             "Volatilité Portefeuille",
             "Volatilité Indice",
-            "Volatilité Annuelle Portefeuille",
-            "Volatilité Annuelle Indice",
+            "Volatilité Annualisée Portefeuille",
+            "Volatilité Annualisée Indice",
             "Beta",
             "Corrélation",
             "Tracking Error",
@@ -108,94 +182,4 @@ if uploaded_file:
             "Sharpe Portefeuille",
             "Sharpe Indice"
         ],
-        "Valeur": [
-            perf_portefeuille,
-            perf_indice,
-            alpha,
-            vol_port,
-            vol_indice,
-            vol_port_ann,
-            vol_indice_ann,
-            beta,
-            corr,
-            te_hebdo,
-            te_ann,
-            info_ratio,
-            sharpe_port,
-            sharpe_indice
-        ]
-    })
-
-    st.subheader("Indicateurs")
-    st.dataframe(resultats)
-
-    # Graphique des rendements
-    st.subheader("Evolution des rendements")
-
-    graph_df = pd.DataFrame({
-        "Portefeuille": portefeuille.reset_index(drop=True),
-        "Indice": indice.reset_index(drop=True)
-    })
-
-    fig = px.line(
-        graph_df,
-        title="Rendements hebdomadaires"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    # Graphique Beta
-    st.subheader("Sensibilité (Bêta)")
-
-    reg_df = pd.DataFrame({
-        "Indice": indice.reset_index(drop=True),
-        "Portefeuille": portefeuille.reset_index(drop=True)
-    })
-
-    fig2 = px.scatter(
-        reg_df,
-        x="Indice",
-        y="Portefeuille",
-        trendline="ols",
-        title="Régression Portefeuille vs Indice"
-    )
-
-    st.plotly_chart(
-        fig2,
-        use_container_width=True
-    )
-
-    st.metric(
-        "Bêta",
-        f"{beta:.4f}" if pd.notna(beta) else "N/A"
-    )
-
-    # Export Excel
-    output = BytesIO()
-
-    with pd.ExcelWriter(
-        output,
-        engine="xlsxwriter"
-    ) as writer:
-
-        resultats.to_excel(
-            writer,
-            sheet_name="Analyse",
-            index=False
-        )
-
-        graph_df.to_excel(
-            writer,
-            sheet_name="Rendements",
-            index=False
-        )
-
-    st.download_button(
-        label="Télécharger le rapport Excel",
-        data=output.getvalue(),
-        file_name="rapport_portefeuille.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+      
