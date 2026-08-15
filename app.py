@@ -121,6 +121,15 @@ if uploaded_file is not None:
 
         active_return = portefeuille - indice
 
+        # ==================================================
+        # HIT RATIO
+        # ==================================================
+
+        hit_ratio = (
+            (portefeuille > indice).sum()
+            / len(portefeuille)
+        )
+
         te_hebdo = active_return.std()
         te_ann = te_hebdo * np.sqrt(52)
 
@@ -161,7 +170,8 @@ if uploaded_file is not None:
                 "Tracking Error Annualisé",
                 "Information Ratio",
                 "Sharpe Portefeuille",
-                "Sharpe Indice"
+                "Sharpe Indice",
+                "Hit Ratio"
             ],
             "Valeur": [
                 perf_portefeuille,
@@ -177,7 +187,8 @@ if uploaded_file is not None:
                 te_ann,
                 info_ratio,
                 sharpe_port,
-                sharpe_indice
+                sharpe_indice,
+                hit_ratio
             ]
         })
 
@@ -234,12 +245,21 @@ if uploaded_file is not None:
             use_container_width=True
         )
 
-        st.metric(
-            "Bêta",
-            f"{beta:.4f}"
-            if pd.notna(beta)
-            else "N/A"
-        )
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.metric(
+                "Bêta",
+                f"{beta:.4f}"
+                if pd.notna(beta)
+                else "N/A"
+            )
+
+        with col2:
+            st.metric(
+                "Hit Ratio",
+                f"{hit_ratio:.2%}"
+            )
 
         # ==================================================
         # EXPORT EXCEL PROFESSIONNEL
